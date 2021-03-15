@@ -1,0 +1,67 @@
+(*
+Protocol: DP-3T
+Modeler: Bachir Bendrissou
+Sources:
+ [S] https://blog.symbolic.software/2020/04/05/dp-3t-verifpal/
+ [OS] https://github.com/DP-3T/documents
+ [OS-l] ...
+Footnote:
+[1] long comment
+*)
+
+free c:channel.
+free c_ab:channel [private].
+free c_ac:channel [private].
+free c_bc:channel [private].
+free A, B, C: bitstring.
+
+type skey.
+
+table eph_values_a(bitstring).
+table eph_values_b(bitstring).
+table eph_values_c(bitstring).
+
+fun hmac(skey,bitstring):bitstring. (* hmac/2 *)
+fun h(skey):skey. (* h/1 *)
+
+(* pairs *)
+(* c) Model pairs with constructor pair/2 and destructors fst and snd. *)
+fun pair(bitstring,bitstring):bitstring. (* pair/2 *)
+
+reduc forall m1:bitstring,m2:bitstring; fst(pair(m1,m2))=m1.
+reduc forall m1:bitstring,m2:bitstring; snd(pair(m1,m2))=m2.
+
+let ini_exch(sender: bitstring, receiver: bitstring, senderkey: skey, pc:channel) =
+	let ephv = hmac(senderkey, receiver) in
+	out(pc, pair(sender, ephv));
+	in(pc, xeph:bitstring);
+	let x = xeph in
+	if sender = A then ( insert eph_values_a(x) )
+	else if sender = B then ( insert eph_values_b(x) )
+	else if sender = C then insert eph_values_c(x).
+
+let resp_exch(c:channel, receiver: bitstring, senderrrr: bitstring, receiverkey: skey, xeph: bitstring) =
+	let sender = fst(xeph) in
+	let eph = snd(xeph) in
+	if receiver = A then ( insert eph_values_a(eph) )
+	else if receiver = B then ( insert eph_values_b(eph) )
+	else if receiver = C then insert eph_values_c(eph);
+	let x = hmac(receiverkey, sender) in
+	out(c, pair(receiver, x)).
+
+process
+	new skA : skey ; new skB : skey ; new skC : skey ;
+	( ini_exch(A, B, skA, c_ab) | in(c_ab, xeph:bitstring); resp_exch(c_ab, B, A, skB, xeph) |
+	  ini_exch(A, C, skA, c_ac) | in(c_ac, xp:bitstring); resp_exch(c_ac, C, A, skC, xp) |
+	  ini_exch(B, C, skB, c_bc) | in(c_bc, xephh:bitstring); resp_exch(c_bc, C, B, skC, xephh) |
+	  phase 1; let newskA = h(skA) in
+	  let newskB = h(skB) in
+	  let newskC = h(skC) in
+	  ( ini_exch(A, B, newskA, c_ab) | in(c_ab, xpp:bitstring); resp_exch(c_ab, B, A, newskB, xpp) |
+	  ini_exch(A, C, newskA, c_ac) | in(c_ac, xh:bitstring); resp_exch(c_ac, C, A, newskC, xh) |
+	  ini_exch(B, C, newskB, c_bc) | in(c_bc, xhh:bitstring); resp_exch(c_bc, C, B, newskC, xhh) |
+	  phase 2 )
+	)
+
+
+(* etc. *)
