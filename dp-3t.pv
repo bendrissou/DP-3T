@@ -6,23 +6,24 @@ Sources:
  [OS] https://github.com/DP-3T/documents
  [OS-l] ...
 Footnote:
-[1] long comment
+[1] We model each day as a phase, ex: phase 0 for day 0.
 *)
 
 free c:channel.
-free c_ab:channel [private].
-free c_ac:channel [private].
-free c_bc:channel [private].
-free A, B, C: bitstring.
+free c_ab:channel [private]. (* private channel for Alice and Bob *)
+free c_ac:channel [private]. (* private channel for Alice and Charlie *)
+free c_bc:channel [private]. (* private channel for Bob and Charlie *)
+free A, B, C: bitstring. (* Alice, Bob, and Charlie *)
 
 type skey.
 
+(* We declare 3 tables to store exchanged ephemeral values. *)
 table eph_values_a(bitstring).
 table eph_values_b(bitstring).
 table eph_values_c(bitstring).
 
-fun hmac(skey,bitstring):bitstring. (* hmac/2 *)
-fun h(skey):skey. (* h/1 *)
+fun hmac(skey,bitstring):bitstring. (* hmac/2 a function to derive ephemeral value from the secret key of the sender and the identity of the receiver *)
+fun h(skey):skey. (* h/1, a hash function to derive a new secret key from yesterday's secret key *)
 
 (* pairs *)
 (* c) Model pairs with constructor pair/2 and destructors fst and snd. *)
