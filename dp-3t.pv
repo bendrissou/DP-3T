@@ -7,6 +7,8 @@ Sources:
  [OS-l] ...
 Footnote:
 [1] We model each day as a phase, ex: phase 0 for day 0.
+[2] We model the extreme case where everyone exchange EphIDs with everyone every day.
+    If the protocol is secure in this special case, than it must be secure in all other cases.
 *)
 
 free c:channel.
@@ -32,36 +34,59 @@ fun pair(bitstring,bitstring):bitstring. (* pair/2 *)
 reduc forall m1:bitstring,m2:bitstring; fst(pair(m1,m2))=m1.
 reduc forall m1:bitstring,m2:bitstring; snd(pair(m1,m2))=m2.
 
+(* events *)
+event Here().
+event Ok().
+event ProFinished(). (* Event when the protocol has finished all phases *)
+event ProStep().     (* Some event at some point *)
+
+(* queries *)
+query event(Here()).
+query event(Ok()).
+query
+  pk_r:bitstring;
+  event(ProFinished()) ==> event(ProStep()).
+
 let ini_exch(sender: bitstring, receiver: bitstring, senderkey: skey, pc:channel) =
 	let ephv = hmac(senderkey, receiver) in
 	out(pc, pair(sender, ephv));
 	in(pc, xeph:bitstring);
 	let x = xeph in
-	if sender = A then ( insert eph_values_a(x) )
-	else if sender = B then ( insert eph_values_b(x) )
-	else if sender = C then insert eph_values_c(x).
+	if sender = A then
+    insert eph_values_a(x)
+	else if sender = B then
+    insert eph_values_b(x).
+
 
 let resp_exch(c:channel, receiver: bitstring, senderrrr: bitstring, receiverkey: skey, xeph: bitstring) =
 	let sender = fst(xeph) in
 	let eph = snd(xeph) in
-	if receiver = A then ( insert eph_values_a(eph) )
-	else if receiver = B then ( insert eph_values_b(eph) )
-	else if receiver = C then insert eph_values_c(eph);
-	let x = hmac(receiverkey, sender) in
-	out(c, pair(receiver, x)).
+  let x = hmac(receiverkey, sender) in
+  out(c, pair(receiver, x));
+  event ProStep();
+  if receiver = B then
+    insert eph_values_b(eph)
+	else if receiver = C then
+    insert eph_values_c(eph).
 
 process
 	new skA : skey ; new skB : skey ; new skC : skey ;
 	( ini_exch(A, B, skA, c_ab) | in(c_ab, xeph:bitstring); resp_exch(c_ab, B, A, skB, xeph) |
 	  ini_exch(A, C, skA, c_ac) | in(c_ac, xp:bitstring); resp_exch(c_ac, C, A, skC, xp) |
 	  ini_exch(B, C, skB, c_bc) | in(c_bc, xephh:bitstring); resp_exch(c_bc, C, B, skC, xephh) |
-	  phase 1; let newskA = h(skA) in
-	  let newskB = h(skB) in
-	  let newskC = h(skC) in
-	  ( ini_exch(A, B, newskA, c_ab) | in(c_ab, xpp:bitstring); resp_exch(c_ab, B, A, newskB, xpp) |
-	  ini_exch(A, C, newskA, c_ac) | in(c_ac, xh:bitstring); resp_exch(c_ac, C, A, newskC, xh) |
-	  ini_exch(B, C, newskB, c_bc) | in(c_bc, xhh:bitstring); resp_exch(c_bc, C, B, newskC, xhh) |
-	  phase 2 )
+	  phase 1; let skA1 = h(skA) in
+	  let skB1 = h(skB) in
+	  let skC1 = h(skC) in
+	  ( ini_exch(A, B, skA1, c_ab) | in(c_ab, xpp:bitstring); resp_exch(c_ab, B, A, skB1, xpp) |
+	  ini_exch(A, C, skA1, c_ac) | in(c_ac, xh:bitstring); resp_exch(c_ac, C, A, skC1, xh) |
+	  ini_exch(B, C, skB1, c_bc) | in(c_bc, xhh:bitstring); resp_exch(c_bc, C, B, skC1, xhh) |
+	  phase 2; let skA2 = h(skA1) in
+	  let skB2 = h(skB1) in
+	  let skC2 = h(skC1) in
+	  ( ini_exch(A, B, skA2, c_ab) | in(c_ab, xpp:bitstring); resp_exch(c_ab, B, A, skB2, xpp) |
+	  ini_exch(A, C, skA2, c_ac) | in(c_ac, xh:bitstring); resp_exch(c_ac, C, A, skC2, xh) |
+	  ini_exch(B, C, skB2, c_bc) | in(c_bc, xhh:bitstring); resp_exch(c_bc, C, B, skC2, xhh) |
+	  phase 3; event ProFinished() ) )
 	)
 
 
