@@ -125,8 +125,20 @@ process
 	  ( ini_exch(A, B, skA2, c_ab) | in(c_ab, xpp:bitstring); resp_exch(c_ab, B, A, skB2, xpp) |
 	  ini_exch(A, C, skA2, c_ac) | in(c_ac, xh:bitstring); resp_exch(c_ac, C, A, skC2, xh) |
 	  ini_exch(B, C, skB2, c_bc) | in(c_bc, xhh:bitstring); resp_exch(c_bc, C, B, skC2, xhh) |
-	 	phase 3;
-    ( report_inf(A, skA1, ephemeral_skA) | healthCareAuthority(ephemeral_skA, ephemeral_skB, ephemeral_skC) | backendServer(ephemeral_skA) | phase 4; event ProFinished() ) ) )
+	  phase 3; let skA3 = h(skA2) in
+	  let skB3 = h(skB2) in
+	  let skC3 = h(skC2) in
+	  ( ini_exch(A, B, skA3, c_ab) | in(c_ab, xpp:bitstring); resp_exch(c_ab, B, A, skB3, xpp) |
+	  ini_exch(A, C, skA3, c_ac) | in(c_ac, xh:bitstring); resp_exch(c_ac, C, A, skC3, xh) |
+	  ini_exch(B, C, skB3, c_bc) | in(c_bc, xhh:bitstring); resp_exch(c_bc, C, B, skC3, xhh) |
+	  phase 4; let skA4 = h(skA3) in
+	  let skB4 = h(skB3) in
+	  let skC4 = h(skC3) in
+	  ( ini_exch(A, B, skA4, c_ab) | in(c_ab, xpp:bitstring); resp_exch(c_ab, B, A, skB4, xpp) |
+	  ini_exch(A, C, skA4, c_ac) | in(c_ac, xh:bitstring); resp_exch(c_ac, C, A, skC4, xh) |
+	  ini_exch(B, C, skB4, c_bc) | in(c_bc, xhh:bitstring); resp_exch(c_bc, C, B, skC4, xhh) |
+	  phase 5;
+    ( report_inf(A, skA1, ephemeral_skA) | healthCareAuthority(ephemeral_skA, ephemeral_skB, ephemeral_skC) | backendServer(ephemeral_skA) | phase 6; event ProFinished() ) ) ) ) )
 	)
 
 
