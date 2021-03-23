@@ -56,6 +56,8 @@ event ProStep().     (* Some event at some point *)
 (* queries *)
 query event(Here()).
 
+
+
 (* Process for Ephs-exchange initializer *)
 let ini_exch(sender: bitstring, receiver: bitstring, senderkey: skey, pc:channel) =
 	let ephv = hmac(senderkey, receiver) in
@@ -94,6 +96,7 @@ let healthCareAuthority(ephKeyA: skey, ephKeyB: skey, ephKeyC: skey) =
   out(c_bs, senc(ephKeyA, token));
   out(c, senc(ephKeyA, token)).
 
+
 let backendServer(ephKey: skey) =
   in(c_bs, encToken:bitstring);
   let x = sdec(ephKey, encToken) in
@@ -106,19 +109,8 @@ process
 	( ini_exch(A, B, skA, c_ab) | resp_exch(c_ab, B, A, skB) |
 	  ini_exch(A, C, skA, c_ac) | resp_exch(c_ac, C, A, skC) |
     ini_exch(B, C, skB, c_bc) | resp_exch(c_bc, C, B, skC) |
-    phase 1; let skA1 = h(skA) in
-	  let skB1 = h(skB) in
-	  let skC1 = h(skC) in
-	  ini_exch(A, B, skA1, c_ab) | resp_exch(c_ab, B, A, skB1) |
-	  ini_exch(A, C, skA1, c_ac) | resp_exch(c_ac, C, A, skC1) |
-	  ini_exch(B, C, skB1, c_bc) | resp_exch(c_bc, C, B, skC1) |
-    phase 2; let skA2 = h(skA1) in
-	  let skB2 = h(skB1) in
-	  let skC2 = h(skC1) in
-	  ini_exch(A, B, skA2, c_ab) | resp_exch(c_ab, B, A, skB2) |
-	  ini_exch(A, C, skA2, c_ac) | resp_exch(c_ac, C, A, skC2) |
-	  ini_exch(B, C, skB2, c_bc) | resp_exch(c_bc, C, B, skC2) |
-    phase 3; report_inf(A, skA1, ephemeral_skA) | healthCareAuthority(ephemeral_skA, ephemeral_skB, ephemeral_skC) | backendServer(ephemeral_skA) | phase 4; event ProFinished()
+
+     phase 1; ( report_inf(A, skA, ephemeral_skA) | healthCareAuthority(ephemeral_skA, ephemeral_skB, ephemeral_skC) | backendServer(ephemeral_skA) | phase 2; event ProFinished() )
 	)
 
 
