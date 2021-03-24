@@ -16,12 +16,15 @@ free c_ab:channel [private]. (* private channel for Alice and Bob *)
 free c_ac:channel [private]. (* private channel for Alice and Charlie *)
 free c_bc:channel [private]. (* private channel for Bob and Charlie *)
 free c_bs:channel [private]. (* Backend Server and the Healthcare Authority share a secure connection *)
+free c_a:channel.
+free c_b:channel.
+free c_c:channel.
 free A, B, C: bitstring. (* Alice, Bob, and Charlie *)
 free BroadcastKey: bitstring.
 type skey.
 
 (* We declare 3 tables to store exchanged ephemeral values. *)
-table eph_values_a(bitstring).
+table eph_values_a(bitstring) .
 table eph_values_b(bitstring).
 table eph_values_c(bitstring).
 
@@ -37,6 +40,8 @@ reduc forall k:skey, m:bitstring; sdec(k,senc(k,m)) = m.
 fun encrypt(skey, skey, bitstring): bitstring.
 reduc forall x:skey, k:skey, r:bitstring; decrypt(encrypt(x,k,r),k,r) = x.
 
+(* Function for generating Ephs *)
+fun eph_key(skey):skey [private]. (* eph/1 *)
 
 (* pairs *)
 (* c) Model pairs with constructor pair/2 and destructors fst and snd. *)
@@ -52,11 +57,13 @@ event Here().
 event Ok().
 event ProFinished(). (* Event when the protocol has finished all phases *)
 event ProStep().     (* Some event at some point *)
+event Infected(bitstring).
 
 (* queries *)
 query event(Here()).
 query attacker(C).
 query attacker(BroadcastKey).
+query event(Infected(C)).
 
 (* Process for Ephs-exchange initializer *)
 let ini_exch(sender: bitstring, receiver: bitstring, senderkey: skey, pc:channel) =
@@ -65,7 +72,7 @@ let ini_exch(sender: bitstring, receiver: bitstring, senderkey: skey, pc:channel
 	in(pc, xeph:bitstring);
 	let x = snd(xeph) in
 	if sender = A then
-    insert eph_values_a(x); event Here()
+    insert eph_values_a(x)
 	else if sender = B then
     insert eph_values_b(x).
 
@@ -84,6 +91,7 @@ let resp_exch(c:channel, receiver: bitstring, senderrrr: bitstring, receiverkey:
 (* Report infection *)
 let report_inf(sender: bitstring, senderKey: skey, ephKey: skey) =
   out(c, RequestToken());
+  event Infected(sender);
   in(c, encToken:bitstring);
   let token = sdec(ephKey, encToken) in
   let msg = encrypt(senderKey, ephKey, token) in
@@ -101,7 +109,7 @@ let backendServer(ephKey: skey) =
   let x = sdec(ephKey, encToken) in
   in(c, y:bitstring);
   let ym = decrypt(y, ephKey, x) in
-  out(c, ym). (* Send out infectedPatients1 *)
+  out(c_a, ym); event Here(). (* Send out infectedPatients1 *)
 
 process
 	new skA : skey ; new skB : skey ; new skC : skey ; new ephemeral_skA : skey ; new ephemeral_skB : skey ; new ephemeral_skC : skey;
@@ -120,7 +128,10 @@ process
 	  ini_exch(A, B, skA2, c_ab) | resp_exch(c_ab, B, A, skB2) |
 	  ini_exch(A, C, skA2, c_ac) | resp_exch(c_ac, C, A, skC2) |
 	  ini_exch(B, C, skB2, c_bc) | resp_exch(c_bc, C, B, skC2) |
-    phase 3; report_inf(A, skA1, ephemeral_skA) | healthCareAuthority(ephemeral_skA) | backendServer(ephemeral_skA) | phase 4
+    phase 3; (in(c, person:bitstring); if person = A then (report_inf(person, skA1, eph_key(skA)))
+    else if person = B then (report_inf(person, skB1, eph_key(skB)))
+    else if person = C then (report_inf(person, skC1, eph_key(skC))) ) |
+    healthCareAuthority(eph_key(skA)) | backendServer(eph_key(skA)) | phase 4
 	)
 
 
