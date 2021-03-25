@@ -19,6 +19,7 @@ free c_bs:channel [private]. (* Backend Server and the Healthcare Authority shar
 free c_a:channel.
 free c_b:channel.
 free c_c:channel.
+free A, B, C: bitstring. (* Alice, Bob, and Charlie *)
 free BroadcastKey: bitstring.
 type skey.
 
@@ -38,11 +39,8 @@ reduc forall k:skey, m:bitstring; sdec(k,senc(k,m)) = m.
 fun encrypt(skey, skey, bitstring): bitstring.
 reduc forall x:skey, k:skey, r:bitstring; decrypt(encrypt(x,k,r),k,r) = x.
 
-(* Function for generating Ephs from private keys*)
-fun eph_key(bitstring):skey [private]. (* eph/1 *)
-
-(* Function for generating Ephs from private keys*)
-fun get_id(skey):bitstring. (* id/1 *)
+(* Function for generating Ephs *)
+fun eph_key(skey):skey [private]. (* eph/1 *)
 
 (* pairs *)
 (* c) Model pairs with constructor pair/2 and destructors fst and snd. *)
@@ -58,12 +56,12 @@ event Here().
 event Ok().
 event ProFinished(). (* Event when the protocol has finished all phases *)
 event ProStep().     (* Some event at some point *)
-event InfectionSent().
+event Infected(bitstring).
 
-(* queries query attacker(C). query event(Infected(C)).
-*)
+(* queries *)
 query event(Here()).
-query event(InfectionSent()).
+query attacker(C).
+query event(Infected(C)).
 
 (* Process for Ephs-exchange initializer *)
 let ini_exch(sender: bitstring, receiver: bitstring, senderkey: skey, pc:channel) =
@@ -83,33 +81,30 @@ let resp_exch(c:channel, receiver: bitstring, receiverkey: skey) =
   insert eph_values(pair(eph, receiver)).
 
 (* Report infection *)
-let report_inf(sender: bitstring, senderKey: skey) =
+let report_inf(sender: bitstring, senderKey: skey, ephKey: skey) =
   out(c, RequestToken());
-  in(c_bc, encToken:bitstring);
-  let token = sdec(eph_key(sender), encToken) in
-  let msg = encrypt(senderKey, eph_key(sender), token) in
-  out(c, msg); event InfectionSent().
+  in(c, encToken:bitstring);
+  let token = sdec(ephKey, encToken) in
+  let msg = encrypt(senderKey, ephKey, token) in
+  out(c, msg); event Infected(sender).
 
-let healthCareAuthority(person: bitstring) =
+let healthCareAuthority(person: bitstring, ephKeyA: skey, ephKeyB: skey, ephKeyC: skey) =
   in(c, xr:bitstring);
   if xr = RequestToken() then
   new token:bitstring;
-  out(c_bs, senc(eph_key(person), token));
-  out(c_bc, senc(eph_key(person), token)).
+  if person = A then (out(c_bs, senc(ephKeyA, token)); out(c, senc(ephKeyA, token)))
+  else if person = B then (out(c_bs, senc(ephKeyB, token)); out(c, senc(ephKeyB, token)))
+  else if person = C then (out(c_bs, senc(ephKeyC, token)); out(c, senc(ephKeyC, token))).
 
-let backendServer(person: bitstring) =
+let backendServer(person: bitstring, ephKeyA: skey, ephKeyB: skey, ephKeyC: skey) =
   in(c_bs, encToken:bitstring); (* Receive encrypted token from healthCareAuthority via private channel *)
   in(c, y:bitstring);
-  let x = sdec(eph_key(person), encToken) in
-  let ym = decrypt(y, eph_key(person), x) in
+  let x = sdec(ephKeyA, encToken) in
+  let ym = decrypt(y, ephKeyA, x) in
   out(c_a, ym); out(c_b, ym); out(c_c, ym); event Here(). (* Send out infectedPatients1 *)
 
 process
-	! new skA : skey ; new skB : skey ; new skC : skey ; (* Private keys for Alice, Bob, and Charlie *)
-  let A = get_id(skA) in
-  let B = get_id(skB) in
-  let C = get_id(skC) in
-  out(c, A) | out(c, B) | out(c, C) |
+	new skA : skey ; new skB : skey ; new skC : skey ; new ephemeral_skA : skey ; new ephemeral_skB : skey ; new ephemeral_skC : skey;
 	( ini_exch(A, B, skA, c_ab) | resp_exch(c_ab, B, skB) |
 	  ini_exch(A, C, skA, c_ac) | resp_exch(c_ac, C, skC) |
     ini_exch(B, C, skB, c_bc) | resp_exch(c_bc, C, skC) |
@@ -125,10 +120,10 @@ process
 	  ini_exch(A, B, skA2, c_ab) | resp_exch(c_ab, B, skB2) |
 	  ini_exch(A, C, skA2, c_ac) | resp_exch(c_ac, C, skC2) |
 	  ini_exch(B, C, skB2, c_bc) | resp_exch(c_bc, C, skC2) |
-    phase 3; in(c, person:bitstring); ( if person = A then (report_inf(person, skA1))
-    else if person = B then (report_inf(person, skB1))
-    else if person = C then (report_inf(person, skC1)) ) |
-    healthCareAuthority(person) | backendServer(person) | phase 4
+    phase 3; in(c, person:bitstring); ( if person = A then (report_inf(person, skA1, eph_key(skA)))
+    else if person = B then (report_inf(person, skB1, eph_key(skB)))
+    else if person = C then (report_inf(person, skC1, eph_key(skC))) ) |
+    healthCareAuthority(person, eph_key(skA), eph_key(skB), eph_key(skC)) | backendServer(person, eph_key(skA), eph_key(skB), eph_key(skC)) | phase 4
 	)
 
 
