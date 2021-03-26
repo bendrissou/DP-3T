@@ -137,7 +137,7 @@ process
     ( ini_exch(fst(contact3), snd(contact3), h(h(get_key(fst(contact3)))), ch(contact3)) | resp_exch(ch(contact3), snd(contact3), h(h(get_key(snd(contact3))))) )) |
 
     phase 3; in(c, person:bitstring);
-    (if person = C || person = C || person = C then report_inf(person, h(get_key(person))) | healthCareAuthority(person) | backendServer(person)) |
+    (if person = A || person = B || person = C then report_inf(person, h(get_key(person))) | healthCareAuthority(person) | backendServer(person)) |
     getNotified(skA, c_a) | getNotified(skB, c_b) | getNotified(skC, c_c) | phase 4
 	)
 
