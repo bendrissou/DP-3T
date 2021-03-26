@@ -12,7 +12,6 @@ Footnote:
 *)
 
 free c:channel.
-free pubC:channel.
 free c_ab:channel [private]. (* private channel for Alice and Bob *)
 free c_ac:channel [private]. (* private channel for Alice and Charlie *)
 free c_bc:channel [private]. (* private channel for Bob and Charlie *)
@@ -20,10 +19,13 @@ free c_bs:channel [private]. (* Backend Server and the Healthcare Authority shar
 free c_a:channel.
 free c_b:channel.
 free c_c:channel.
+free c_inf_a:channel [private].
+free c_inf_b:channel [private].
+free c_inf_c:channel [private].
 free BroadcastKey: bitstring.
 type skey.
 
-(* We declare 1 tables to store exchanged ephemeral values. *)
+(* We declare 1 tables to store exchanged ephemeral values.++++++++++++++++++++++++++++++ *)
 table eph_values(bitstring, bitstring).
 
 
@@ -40,7 +42,7 @@ fun encrypt(skey, skey, bitstring): bitstring.
 reduc forall x:skey, k:skey, r:bitstring; decrypt(encrypt(x,k,r),k,r) = x.
 
 (* Get a private channel for every two entities. *)
-fun ch(bitstring):channel [private]. (* ch/1 *)
+fun ch(bitstring, bitstring):channel [private]. (* ch/2 *)
 
 (* Function for generating Ephs from private keys*)
 fun eph_key(bitstring):skey [private]. (* eph/1 *)
@@ -73,44 +75,40 @@ query event(InfectionSent()).
 query event(Notification()).
 
 (* Process for Ephs-exchange initializer *)
-let ini_exch(sender: bitstring, receiver: bitstring, senderkey: skey, pc:channel) =
+let ini_exch(sender: bitstring, receiver: bitstring, senderkey: skey) =
 	let ephv = hmac(senderkey, receiver, BroadcastKey) in
-	out(pc, pair(sender, ephv));
-	in(pc, xeph:bitstring);
-  let senderx = fst(xeph) in
-	let eph = snd(xeph) in
-	insert eph_values(eph, senderx).
+	out(ch(sender, receiver), ephv);
+	in(ch(sender, receiver), xeph:bitstring);
+	insert eph_values(xeph, sender).
 
 (* Process for Ephs-exchange responder*)
-let resp_exch(c:channel, receiver: bitstring, receiverkey: skey) =
-  in(c, xeph:bitstring);
-  let sender = fst(xeph) in
-	let eph = snd(xeph) in
+let resp_exch(receiver: bitstring, sender: bitstring, receiverkey: skey) =
+  in(ch(sender, receiver), eph:bitstring);
   let x = hmac(receiverkey, sender, BroadcastKey) in
-  out(c, pair(sender, x));
+  out(ch(sender, receiver), x);
   insert eph_values(eph, receiver).
 
-(* Report infection *)
-let report_inf(sender: bitstring, senderKey: skey) =
-  out(c, RequestToken());
-  in(c_bc, encToken:bitstring);
-  let token = sdec(eph_key(sender), encToken) in
-  let msg = encrypt(senderKey, eph_key(sender), token) in
-  out(c, msg); event InfectionSent().
+  (* Report infection *)
+  let report_inf(sender: bitstring, senderKey: skey) =
+    out(c, RequestToken());
+    in(c_bc, encToken:bitstring);
+    let token = sdec(eph_key(sender), encToken) in
+    let msg = encrypt(senderKey, eph_key(sender), token) in
+    out(c_ac, msg); event InfectionSent().
 
-let healthCareAuthority(person: bitstring) =
-  in(c, xr:bitstring);
-  if xr = RequestToken() then
-  new token:bitstring;
-  out(c_bs, senc(eph_key(person), token));
-  out(c_bc, senc(eph_key(person), token)).
+  let healthCareAuthority(person: bitstring) =
+    in(c, xr:bitstring);
+    if xr = RequestToken() then
+    new token:bitstring;
+    out(c_bs, senc(eph_key(person), token));
+    out(c_bc, senc(eph_key(person), token)).
 
-let backendServer(person: bitstring) =
-  in(c_bs, encToken:bitstring); (* Receive encrypted token from healthCareAuthority via private channel *)
-  in(c, y:bitstring);
-  let x = sdec(eph_key(person), encToken) in
-  let ym = decrypt(y, eph_key(person), x) in
-  out(c_a, ym); out(c_b, ym); out(c_c, ym); event Here(). (* Send out infectedPatients1 *)
+  let backendServer(person: bitstring) =
+    in(c_bs, encToken:bitstring); (* Receive encrypted token from healthCareAuthority via private channel *)
+    in(c_ac, y:bitstring);
+    let x = sdec(eph_key(person), encToken) in
+    let ym = decrypt(y, eph_key(person), x) in
+    out(c_inf_a, ym); out(c_inf_b, ym); out(c_inf_c, ym); event Here(). (* Send out infectedPatients1 *)
 
 let getNotified(k: skey, c:channel) =
   in(c, y:skey);
@@ -118,28 +116,25 @@ let getNotified(k: skey, c:channel) =
   get eph_values(=hmac(y, get_id(k), BroadcastKey), =get_id(k)) in event Notification().
 
 process
-	! new skA : skey ; new skB : skey ; new skC : skey ; (* Private keys for Alice, Bob, and Charlie *)
+	new skA : skey ; new skB : skey ; new skC : skey ; (* Private keys for Alice, Bob, and Charlie *)
   let A = get_id(skA) in
   let B = get_id(skB) in
   let C = get_id(skC) in
   out(c, A) | out(c, B) | out(c, C) |
 	( in(c, contact1:bitstring);
-    (if contact1 = pair(A, B) || contact1 = pair(A, C) || contact1 = pair(B, C) then
-    ( ini_exch(fst(contact1), snd(contact1), get_key(fst(contact1)), ch(contact1)) | resp_exch(ch(contact1), snd(contact1), get_key(snd(contact1))) )) |
+    if contact1 = pair(A, B) || contact1 = pair(A, C) || contact1 = pair(B, C) then
+    (ini_exch(fst(contact1), snd(contact1), get_key(fst(contact1))) | resp_exch(snd(contact1), fst(contact1), get_key(snd(contact1)))) |
     phase 1;
     in(c, contact2:bitstring);
-    (if contact2 = pair(A, B) || contact2 = pair(A, C) || contact2 = pair(B, C) then
-    ( ini_exch(fst(contact2), snd(contact2), h(get_key(fst(contact2))), ch(contact2)) | resp_exch(ch(contact2), snd(contact2), h(get_key(snd(contact2)))) )) |
-
+    if contact2 = pair(A, B) || contact2 = pair(A, C) || contact2 = pair(B, C) then
+    (ini_exch(fst(contact2), snd(contact2), h(get_key(fst(contact2)))) | resp_exch(snd(contact2), fst(contact2), h(get_key(snd(contact2))))) |
     phase 2;
     in(c, contact3:bitstring);
-    (if contact3 = pair(A, B) || contact3 = pair(A, C) || contact3 = pair(B, C) then
-    ( ini_exch(fst(contact3), snd(contact3), h(h(get_key(fst(contact3)))), ch(contact3)) | resp_exch(ch(contact3), snd(contact3), h(h(get_key(snd(contact3))))) )) |
+    if contact3 = pair(A, B) || contact3 = pair(A, C) || contact3 = pair(B, C) then
+    (ini_exch(fst(contact3), snd(contact3), h(h(get_key(fst(contact3))))) | resp_exch(snd(contact3), fst(contact3), h(h(get_key(snd(contact3)))))) |
 
-    phase 3; in(c, person:bitstring);
-    (if person = C || person = C || person = C then report_inf(person, h(get_key(person))) | healthCareAuthority(person) | backendServer(person)) |
-    getNotified(skA, c_a) | getNotified(skB, c_b) | getNotified(skC, c_c) | phase 4
-	)
+    phase 3; in(c, person:bitstring);  if person = A then ( report_inf(person, h(get_key(person)))  |
+    healthCareAuthority(person) | backendServer(person) | getNotified(skA, c_inf_a) | getNotified(skB, c_inf_b) | getNotified(skC, c_inf_c))	)
 
 
 (* etc. *)

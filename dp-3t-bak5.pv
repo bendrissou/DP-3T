@@ -12,7 +12,6 @@ Footnote:
 *)
 
 free c:channel.
-free pubC:channel.
 free c_ab:channel [private]. (* private channel for Alice and Bob *)
 free c_ac:channel [private]. (* private channel for Alice and Charlie *)
 free c_bc:channel [private]. (* private channel for Bob and Charlie *)
@@ -38,9 +37,6 @@ reduc forall k:skey, m:bitstring; sdec(k,senc(k,m)) = m.
 (* Encryption scheme *)
 fun encrypt(skey, skey, bitstring): bitstring.
 reduc forall x:skey, k:skey, r:bitstring; decrypt(encrypt(x,k,r),k,r) = x.
-
-(* Get a private channel for every two entities. *)
-fun ch(bitstring):channel [private]. (* ch/1 *)
 
 (* Function for generating Ephs from private keys*)
 fun eph_key(bitstring):skey [private]. (* eph/1 *)
@@ -123,21 +119,23 @@ process
   let B = get_id(skB) in
   let C = get_id(skC) in
   out(c, A) | out(c, B) | out(c, C) |
-	( in(c, contact1:bitstring);
-    (if contact1 = pair(A, B) || contact1 = pair(A, C) || contact1 = pair(B, C) then
-    ( ini_exch(fst(contact1), snd(contact1), get_key(fst(contact1)), ch(contact1)) | resp_exch(ch(contact1), snd(contact1), get_key(snd(contact1))) )) |
-    phase 1;
-    in(c, contact2:bitstring);
-    (if contact2 = pair(A, B) || contact2 = pair(A, C) || contact2 = pair(B, C) then
-    ( ini_exch(fst(contact2), snd(contact2), h(get_key(fst(contact2))), ch(contact2)) | resp_exch(ch(contact2), snd(contact2), h(get_key(snd(contact2)))) )) |
-
-    phase 2;
-    in(c, contact3:bitstring);
-    (if contact3 = pair(A, B) || contact3 = pair(A, C) || contact3 = pair(B, C) then
-    ( ini_exch(fst(contact3), snd(contact3), h(h(get_key(fst(contact3)))), ch(contact3)) | resp_exch(ch(contact3), snd(contact3), h(h(get_key(snd(contact3))))) )) |
-
+	( ini_exch(A, B, skA, c_ab) | resp_exch(c_ab, B, skB) |
+    ini_exch(A, C, skA, c_ac) | resp_exch(c_ac, C, skC) |
+    ini_exch(B, C, skB, c_bc) | resp_exch(c_bc, C, skC) |
+    phase 1; let skA1 = h(skA) in
+    let skB1 = h(skB) in
+    let skC1 = h(skC) in
+    ini_exch(A, B, skA1, c_ab) | resp_exch(c_ab, B, skB1) |
+    ini_exch(A, C, skA1, c_ac) | resp_exch(c_ac, C, skC1) |
+    ini_exch(B, C, skB1, c_bc) | resp_exch(c_bc, C, skC1) |
+    phase 2; let skA2 = h(skA1) in
+    let skB2 = h(skB1) in
+    let skC2 = h(skC1) in
+    ini_exch(A, B, skA2, c_ab) | resp_exch(c_ab, B, skB2) |
+    ini_exch(A, C, skA2, c_ac) | resp_exch(c_ac, C, skC2) |
+    ini_exch(B, C, skB2, c_bc) | resp_exch(c_bc, C, skC2) |
     phase 3; in(c, person:bitstring);
-    (if person = C || person = C || person = C then report_inf(person, h(get_key(person))) | healthCareAuthority(person) | backendServer(person)) |
+    (if person = B || person = C || person = A then report_inf(person, h(get_key(person))) | healthCareAuthority(person) | backendServer(person)) |
     getNotified(skA, c_a) | getNotified(skB, c_b) | getNotified(skC, c_c) | phase 4
 	)
 
