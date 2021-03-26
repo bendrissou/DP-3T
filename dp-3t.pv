@@ -4,28 +4,30 @@ Modeler: Bachir Bendrissou
 Sources:
  [S] https://blog.symbolic.software/2020/04/05/dp-3t-verifpal/
  [OS] https://github.com/DP-3T/documents
- [OS-l] ...
 Footnote:
 [1] We model each day as a phase, ex: phase 0 for day 0, phase 1 for day 1 etc.
-[2] The attacker chooses the pair of people that exchange ephemeral values every day.
+[2] Every day the attacker gets to choose the pair of people who exchange ephemeral values.
+[3] Model limitations:
+    - We modeled only 4 days (phases 0-4) of normal days of ephemeral days exchanges + one day (phase 5) of infection notification.
+    - Each process replica has only 3 principals.
+    - The positive test is assumed to be conducted on day 1.
+[4] Three sanity checks are implemented, corresponding to events: EphsExchanged, InfectionReported and Notification.
+[5] Weak secrecy is tested for users' secret keys and ephemeral keys at the end of the script.
+[6] A correspondence query is implemented to insure that any notified principal must have had contact with the infected person.
 *)
 
 free c:channel.
-free pubC:channel.
-free c_ab:channel [private]. (* private channel for Alice and Bob *)
-free c_ac:channel [private]. (* private channel for Alice and Charlie *)
-free c_bc:channel [private]. (* private channel for Bob and Charlie *)
 free c_bs:channel [private]. (* Backend Server and the Healthcare Authority share a secure connection *)
-free c_a:channel.
-free c_b:channel.
-free c_c:channel.
+free c_a:channel.   (* Channel for sending notifications to A. *)
+free c_b:channel.   (* Channel for sending notifications to B. *)
+free c_c:channel.   (* Channel for sending notifications to C. *)
 free BroadcastKey: bitstring.
 type skey.
 
 (* We declare 1 tables to store exchanged ephemeral values. *)
 table eph_values(bitstring, bitstring).
 
-fun hmac(skey,bitstring, bitstring):bitstring. (* hmac/2 a function to derive ephemeral value from the secret key of the sender and the identity of the receiver *)
+fun hmac(skey, bitstring, bitstring):bitstring. (* hmac/2 a function to derive ephemeral value from the secret key of the sender, the identity of the receiver and BroadcastKey *)
 fun h(skey):skey. (* h/1, a hash function to derive a new secret key from yesterday's secret key *)
 
 (* symmetric crypto for token encryption *)
@@ -50,7 +52,6 @@ reduc forall k:skey; get_key(get_id(k)) = k [private].
 (* pairs *)
 (* c) Model pairs with constructor pair/2 and destructors fst and snd. *)
 fun pair(bitstring,bitstring):bitstring. (* pair/2 *)
-
 reduc forall m1:bitstring,m2:bitstring; fst(pair(m1,m2))=m1.
 reduc forall m1:bitstring,m2:bitstring; snd(pair(m1,m2))=m2.
 
@@ -69,8 +70,8 @@ query event(EphsExchanged()).
 query event(InfectionReported()).
 query receiver:bitstring,eph_value:bitstring; event(Notification(receiver, eph_value)).
 
-query k:skey; event(EphKeyLeak(k)). (* Check if ephemeral key k is deducible by attacker *)
-query k:skey; event(SKLeak(k)).     (* Check if secret key k is deducible by attacker *)
+query k:skey; event(EphKeyLeak(k)). (* Check if ephemeral key k is deducible by Attacker *)
+query k:skey; event(SKLeak(k)).     (* Check if secret key k is deducible by Attacker *)
 
 query   (* Query to insure that a person is notified only when they have exchanged Eph values with the infected person *)
      receiver:bitstring,eph_value:bitstring;
@@ -100,7 +101,7 @@ let resp_exch(c:channel, receiver: bitstring, receiverkey: skey) =
 (* Report infection *)
 let report_inf(sender: bitstring, senderKey: skey) =
   out(c, RequestToken());
-  in(c_bc, encToken:bitstring);
+  in(c, encToken:bitstring);
   let token = sdec(eph_key(sender), encToken) in
   let msg = encrypt(senderKey, eph_key(sender), token) in
   out(c, msg); event InfectionReported().
@@ -110,7 +111,7 @@ let healthCareAuthority(person: bitstring) =
   if xr = RequestToken() then
   new token:bitstring;
   out(c_bs, senc(eph_key(person), token));
-  out(c_bc, senc(eph_key(person), token)).
+  out(c, senc(eph_key(person), token)).
 
 let backendServer(person: bitstring) =
   in(c_bs, encToken:bitstring); (* Receive encrypted token from healthCareAuthority via private channel *)
@@ -135,27 +136,27 @@ process
   let C = get_id(skC) in
   out(c, A) | out(c, B) | out(c, C) |
 	( in(c, contact0:bitstring); (* day 0 *)
-    (if contact0 = pair(A, B) || contact0 = pair(A, C) || contact0 = pair(B, C) then
+    (if contact0 = pair(A, B) || contact0 = pair(B, A) || contact0 = pair(A, C) || contact0 = pair(C, A) || contact0 = pair(B, C) || contact0 = pair(C, B) then
     ( ini_exch(fst(contact0), snd(contact0), get_key(fst(contact0)), ch(contact0)) | resp_exch(ch(contact0), snd(contact0), get_key(snd(contact0))) )) |
 
     phase 1; (* day 1 *)
     in(c, contact1:bitstring);
-    (if contact1 = pair(A, B) || contact1 = pair(A, C) || contact1 = pair(B, C) then
+    (if contact1 = pair(A, B) || contact1 = pair(B, A) || contact1 = pair(A, C) || contact1 = pair(C, A) || contact1 = pair(B, C) || contact1 = pair(C, B) then
     ( ini_exch(fst(contact1), snd(contact1), h(get_key(fst(contact1))), ch(contact1)) | resp_exch(ch(contact1), snd(contact1), h(get_key(snd(contact1)))) )) |
 
     phase 2; (* day 2 *)
     in(c, contact2:bitstring);
-    (if contact2 = pair(A, B) || contact2 = pair(A, C) || contact2 = pair(B, C) then
+    (if contact2 = pair(A, B) || contact2 = pair(B, A) || contact2 = pair(A, C) || contact2 = pair(C, A) || contact2 = pair(B, C) || contact2 = pair(C, B) then
     ( ini_exch(fst(contact2), snd(contact2), h(h(get_key(fst(contact2)))), ch(contact2)) | resp_exch(ch(contact2), snd(contact2), h(h(get_key(snd(contact2))))) )) |
 
     phase 3; (* day 3 *)
     in(c, contact3:bitstring);
-    (if contact3 = pair(A, B) || contact3 = pair(A, C) || contact3 = pair(B, C) then
+    (if contact3 = pair(A, B) || contact3 = pair(B, A) || contact3 = pair(A, C) || contact3 = pair(C, A) || contact3 = pair(B, C) || contact3 = pair(C, B) then
     ( ini_exch(fst(contact3), snd(contact3), h(h(h(get_key(fst(contact3))))), ch(contact3)) | resp_exch(ch(contact3), snd(contact3), h(h(h(get_key(snd(contact3)))))) )) |
 
     phase 4; (* day 4 *)
     in(c, contact4:bitstring);
-    (if contact4 = pair(A, B) || contact4 = pair(A, C) || contact4 = pair(B, C) then
+    (if contact4 = pair(A, B) || contact4 = pair(B, A) || contact4 = pair(A, C) || contact4 = pair(C, A) || contact4 = pair(B, C) || contact4 = pair(C, B) then
     ( ini_exch(fst(contact4), snd(contact4), h(h(h(h(get_key(fst(contact4)))))), ch(contact4)) | resp_exch(ch(contact4), snd(contact4), h(h(h(h(get_key(snd(contact4))))))) )) |
 
     phase 5; (* Infection phase *)
@@ -167,6 +168,3 @@ process
     ( in(c, ekey:skey); if ekey = eph_key(A) || ekey = eph_key(B) || ekey = eph_key(C) then event EphKeyLeak(ekey) ) |
     ( in(c, pkey:skey); if pkey = get_key(A) || pkey = get_key(B) || pkey = get_key(C) then event EphKeyLeak(pkey) )
 	)
-
-
-(* etc. *)
